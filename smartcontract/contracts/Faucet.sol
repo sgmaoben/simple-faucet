@@ -1,4 +1,5 @@
-pragma solidity ^0.5.1;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
 
 interface ERC20 {
     function transfer(address to, uint256 value) external returns (bool);
@@ -6,14 +7,14 @@ interface ERC20 {
 }
 
 contract Faucet {
-    uint256 constant public tokenAmount = 100000000000000000000;
+    uint256 constant public tokenAmount = 10000000000000000000;
     uint256 constant public waitTime = 30 minutes;
 
     ERC20 public tokenInstance;
     
     mapping(address => uint256) lastAccessTime;
 
-    constructor(address _tokenInstance) public {
+    constructor(address _tokenInstance) {
         require(_tokenInstance != address(0));
         tokenInstance = ERC20(_tokenInstance);
     }

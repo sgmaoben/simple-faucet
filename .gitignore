@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Hardhat
+cache/
+artifacts/
+typechain-types/
+node_modules/
+
+# 环境变量（重要：绝对不要提交私钥！）
+.env
+
+# Coverage
+coverage/
+coverage.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
