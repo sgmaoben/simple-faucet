@@ -15,7 +15,7 @@
   let faucetContract;
   let currentAccount;
   let tokenDecimals = 18;
-  let tokenSymbol = "U";
+  let tokenSymbol = "$U";
 
   function setStatus(message, type = "neutral") {
     statusText.textContent = message;
