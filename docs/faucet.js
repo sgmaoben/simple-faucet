@@ -14,7 +14,7 @@ $(document).ready(function() {
 	//////////////////////////////////////////////////////////////////////////////
 
 	var account;
-	var web3Provider;
+	var web3;
 
 	var contract_token;
 	var contract_faucet;
@@ -22,111 +22,151 @@ $(document).ready(function() {
 	var balanceETH = 0;
 	var balanceToken = 0;
 
-	function initialize() {
-		setAccount();
-		setTokenBalance();
-		checkFaucet();
+	var token_abi;
+	var faucet_abi;
+
+	async function initialize() {
+		await setAccount();
+		await setTokenBalance();
+		await checkFaucet();
 	}
 
-	function setAccount() {
-		web3.version.getNetwork(function(err, netId) {
-			if (!err && netId == networkID) { 
+	async function setAccount() {
+		try {
+			const netId = await web3.eth.net.getId();
+			if (netId == networkID) { 
 				$("#wrong_network").fadeOut(1000);
 				setTimeout(function(){ $("#correct_network").fadeIn(); $("#faucet").fadeIn(); }, 1000);
-				account = web3.eth.accounts[0];
+				
+				const accounts = await web3.eth.getAccounts();
+				account = accounts[0];
 				$("#address").text(account);
-				web3.eth.getBalance(account, function(err, res) {
-					if(!err) {
-						balanceETH = Number(web3.fromWei(res, 'ether'));
-						$('#balanceETH').text(balanceETH + " ETH");
-						$('#balanceETH').show();
-					}
-				});
+				
+				const balance = await web3.eth.getBalance(account);
+				balanceETH = Number(web3.utils.fromWei(balance, 'ether'));
+				$('#balanceETH').text(balanceETH.toFixed(4) + " ETH");
+				$('#balanceETH').show();
 			} 
-		});
+		} catch (err) {
+			console.error("Error setting account:", err);
+		}
 	}
 
-	function setTokenBalance() {
-		contract_token.balanceOf(web3.eth.accounts[0], function(err, result) {
-			if(!err) {
-				$('#balanceToken').text(web3.fromWei(balanceToken, 'ether') + " Tokens");
-				if(Number(result) != balanceToken) {
-					balanceToken = Number(result);
-					$('#balanceToken').text(web3.fromWei(balanceToken, 'ether') + " Tokens");
-				}
-			}
-		});
+	async function setTokenBalance() {
+		try {
+			const accounts = await web3.eth.getAccounts();
+			const result = await contract_token.methods.balanceOf(accounts[0]).call();
+			balanceToken = Number(result);
+			$('#balanceToken').text(web3.utils.fromWei(result, 'ether') + " Tokens");
+		} catch (err) {
+			console.error("Error getting token balance:", err);
+		}
 	}
 
-	function checkFaucet() {
-		var tokenAmount = 0;
-		contract_faucet.tokenAmount(function(err, result) {
-			if(!err) {
-				tokenAmount = result;
-				$("#requestButton").text("Request " + web3.fromWei(result, 'ether') + " Test Tokens");
-			}
-		});
+	async function checkFaucet() {
+		try {
+			var tokenAmount = 0;
+			
+			const amount = await contract_faucet.methods.tokenAmount().call();
+			tokenAmount = amount;
+			$("#requestButton").text("Request " + web3.utils.fromWei(amount, 'ether') + " Test Tokens");
 
-		contract_token.balanceOf(faucet_address, function(errCall, result) {
-			if(!errCall) {
-				if(result < tokenAmount) {
-					$("#warning").html("Sorry - the faucet is out of tokens! But don't worry, we're on it!")
+			const faucetBalance = await contract_token.methods.balanceOf(faucet_address).call();
+			if (Number(faucetBalance) < Number(tokenAmount)) {
+				$("#warning").html("Sorry - the faucet is out of tokens! But don't worry, we're on it!");
+			} else {
+				const accounts = await web3.eth.getAccounts();
+				const allowed = await contract_faucet.methods.allowedToWithdraw(accounts[0]).call();
+				if (allowed && balanceToken < tokenAmount * 1000) {
+					$("#requestButton").removeAttr('disabled');
 				} else {
-					contract_faucet.allowedToWithdraw(web3.eth.accounts[0], function(err, result) {
-						if(!err) {
-							if(result && balanceToken < tokenAmount*1000) {
-								$("#requestButton").removeAttr('disabled');
-							} else {
-								contract_faucet.waitTime(function(err, result) {
-									if(!err) {
-										$("#warning").html("Sorry - you can only request tokens every " + (result)/60 + " minutes. Please wait!")
-									}
-								});
-							}	
-						}
-					});
+					const waitTime = await contract_faucet.methods.waitTime().call();
+					$("#warning").html("Sorry - you can only request tokens every " + (waitTime) / 60 + " minutes. Please wait!");
 				}
 			}
-		});
+		} catch (err) {
+			console.error("Error checking faucet:", err);
+		}
 	}
 
-	function getTestTokens() {
+	async function getTestTokens() {
 		$("#requestButton").attr('disabled', true);
-		web3.eth.getTransactionCount(account, function(errNonce, nonce) {
-			if(!errNonce) {
-				contract_faucet.requestTokens({value: 0, gas: 200000, gasPrice: minGasPrice, from: account, nonce: nonce}, function(errCall, result) {
-					if(!errCall) {
-						testTokensRequested = true;
-						$('#getTokens').hide();
-					} else {
-						testTokensRequested = true;
-						$('#getTokens').hide();
-					}
-				});
+		try {
+			await contract_faucet.methods.requestTokens().send({
+				value: 0,
+				gas: 200000,
+				gasPrice: minGasPrice,
+				from: account
+			});
+			$('#getTokens').hide();
+		} catch (err) {
+			console.error("Error requesting tokens:", err);
+			$('#getTokens').hide();
+		}
+	}
+
+	async function initWeb3() {
+		$("#rpc_url").text(rpcURL);
+		$("#network_id").text(networkID);
+
+		// Modern MetaMask detection
+		if (typeof window.ethereum !== 'undefined') {
+			web3 = new Web3(window.ethereum);
+			try {
+				// Request account access
+				await window.ethereum.request({ method: 'eth_requestAccounts' });
+				console.log("MetaMask connected");
+			} catch (error) {
+				console.error("User denied account access:", error);
+				$("#warning").html("Please connect your MetaMask wallet to use this faucet.");
+				return;
 			}
-		});
+		} else if (typeof window.web3 !== 'undefined') {
+			// Legacy dapp browsers
+			web3 = new Web3(window.web3.currentProvider);
+		} else {
+			// Fallback to RPC
+			web3 = new Web3(new Web3.providers.HttpProvider(rpcURL));
+			$("#warning").html("Please install MetaMask to use this faucet!");
+			return;
+		}
+
+		// Load contract ABIs
+		try {
+			const tokenData = await $.getJSON('json/erc20.json');
+			token_abi = tokenData;
+			contract_token = new web3.eth.Contract(token_abi, token_address);
+
+			const faucetData = await $.getJSON('json/faucet.json');
+			faucet_abi = faucetData;
+			contract_faucet = new web3.eth.Contract(faucet_abi, faucet_address);
+
+			// Initialize after contracts are loaded
+			setTimeout(function(){ initialize(); }, 1000);
+		} catch (err) {
+			console.error("Error loading contract ABIs:", err);
+		}
 	}
 
-	$("#rpc_url").text(rpcURL);
-	$("#network_id").text(networkID);
+	// Initialize Web3
+	initWeb3();
 
-	if (typeof web3 !== 'undefined') {
-		web3Provider = web3.currentProvider;
-	}
-
-	web3 = new Web3(web3Provider);
-
-	$.getJSON('json/erc20.json', function(data) {
-		contract_token = web3.eth.contract(data).at(token_address);
-	});
-	$.getJSON('json/faucet.json', function(data) {
-		contract_faucet = web3.eth.contract(data).at(faucet_address);
-	});
-
-	setTimeout(function(){ initialize(); }, 1000);
-
+	// Button click handler
 	let tokenButton = document.querySelector('#requestButton');
 	tokenButton.addEventListener('click', function() {
 		getTestTokens();
 	});
+
+	// Listen for account changes
+	if (typeof window.ethereum !== 'undefined') {
+		window.ethereum.on('accountsChanged', function (accounts) {
+			account = accounts[0];
+			$("#address").text(account);
+			initialize();
+		});
+
+		window.ethereum.on('chainChanged', function (chainId) {
+			window.location.reload();
+		});
+	}
 });
